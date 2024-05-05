@@ -1,0 +1,58 @@
+from datasets import load_dataset
+from sacrebleu import BLEU
+from bert_score import score as bert_score
+import openai
+import time
+
+openai.api_key = "sk-apikey"
+
+# Load the dataset
+dataset = load_dataset("wmt14", "de-en", split="test")
+
+# Set the batch size and delay between batches
+batch_size = 1000
+delay_seconds = 30
+
+translations = []
+references = [example["translation"]["en"] for example in dataset]
+
+for i in range(0, len(dataset), batch_size):
+    batch = dataset.select(range(i, min(i + batch_size, len(dataset))))
+    for example in batch:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "Translate the following text from German to English:"},
+                {"role": "user", "content": example["translation"]["de"]},
+            ],
+            max_tokens=150,
+            temperature=0.7,
+            top_p=1,
+            n=1,
+        )
+        translation = response.choices[0].message["content"].strip()
+        translations.append(translation)
+
+        # Save the translated text to a file
+        with open("translationsENDE3.txt", "a") as file:
+            file.write(f"Original German: {example['translation']['de']}\n")
+            file.write(f"Translated English: {translation}\n\n")
+
+    # Add a delay between batches
+    if i + batch_size < len(dataset):
+        print(f"Translated {i + batch_size} sentences. Waiting for {delay_seconds} seconds...")
+        time.sleep(delay_seconds)
+
+# Calculate BLEU score
+bleu = BLEU()
+score = bleu.corpus_score(translations, [references])
+print(f"BLEU score: {score.score}")
+
+# Calculate BERTScore for all translations against all references
+P, R, F1 = bert_score(translations, references, lang="en", verbose=True)
+bertscore = F1.mean().item()
+
+
+with open("scoresDE_EN3.txt", "w") as file:
+    file.write(f"BLEU score: {score.score}\n")
+    file.write(f"BERTScore: {bertscore}\n")
