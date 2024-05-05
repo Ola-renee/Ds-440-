@@ -1,0 +1,59 @@
+import pandas as pd
+import time
+from sacrebleu import BLEU
+from bert_score import score as bert_score
+import openai
+
+openai.api_key = "your-openai-api-key"
+
+url = "https://storage.googleapis.com/kagglesdsdata/datasets/4484220/7685004/wmt14_translate_fr-en_test.csv"
+df = pd.read_csv(url)
+
+# Define the batch size and delay
+batch_size = 1000  
+delay = 30
+
+references = df["en"].tolist()  # Collect references from the dataframe
+
+# Process translations in batches with a delay between each batch
+for start_idx in range(0, len(df), batch_size):
+    end_idx = start_idx + batch_size
+    batch = df.iloc[start_idx:end_idx]
+    for index, row in batch.iterrows():
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "Translate the following text from French to English:"},
+                {"role": "user", "content": row["fr"]}
+            ],
+            max_tokens=150,
+            temperature=0.7,
+            top_p=1,
+            n=1,
+        )
+        translation = response.choices[0].message["content"].strip()
+        translations.append(translation)
+
+    time.sleep(delay)  # Delay before processing the next batch
+
+# Calculate BLEU score for all translations against all references
+bleu = BLEU()
+bleu_score = bleu.corpus_score(translations, [references])
+
+# Calculate BERTScore for all translations against all references
+P, R, F1 = bert_score(translations, references, lang="en", verbose=True)
+bertscore = F1.mean().item()  # Taking the F1 score as the BERTScore
+
+# Print BLEU and BERT scores to console
+print(f"BLEU score: {bleu_score.score}")
+print(f"BERTScore: {bertscore}")
+
+# Save translations, BLEU, and BERT scores to files
+with open("translationsEnFr3.tx", "w") as file:
+    for orig, trans in zip(references, translations):
+        file.write(f"Original French: {orig}\n")
+        file.write(f"Translated English: {trans}\n\n")
+
+with open("translation_scores3.txt", "w") as file:
+    file.write(f"BLEU score: {bleu_score.score}\n")
+    file.write(f"BERTScore: {bertscore}\n")
