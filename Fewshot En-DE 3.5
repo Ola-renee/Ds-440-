@@ -31,7 +31,7 @@ def few_shot_translation_and_bleu(num_shots):
                 {"role": "system", "content": prompt},
             ],
             max_tokens=150,
-            temperature=0.,
+            temperature=0.1,
             top_p=1,
             n=1,
         )
