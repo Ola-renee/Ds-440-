@@ -1,0 +1,63 @@
+
+from datasets import load_dataset, load_from_disk
+import pandas as pd
+from sacrebleu import BLEU
+import openai
+
+openai.api_key = "apikey"
+
+# Load the dataset
+train_url = "https://storage.googleapis.com/kagglesdsdata/datasets/4484220/7685004/wmt14_translate_fr-en_validation.csv?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=gcp-kaggle-com%40kaggle-161607.iam.gserviceaccount.com%2F20240506%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20240506T210512Z&X-Goog-Expires=259200&X-Goog-SignedHeaders=host&X-Goog-Signature=4803b044e852e5a73c8147712649e4cab755cdf1474af046b15653b4168939f038048bc2e2abe14ce973eed9b287189f0eacdaca39d07c0ac92b9b9996267cbe1477f2d667ff41d0f171aa2e16e1be796fed8a48df0f88d746928c1e94f48cb317dc56a0a1419bfd04c6f2f6d88114474c4fd6bf3f5fd0e7422d64549dfa94ec16fe2227d67e77a40fc223ed2aebc19fc5426794487bfedc3c945a013ff4a4f83feb7c77fde9b7cd166577ac0ac42dcae922c3c32edaaee8d3923e9e32a165f85d178de5cab50be7d31156e986fdca72392b3f006f06fc9fa2f15cd1b981dff90703f78538ad208f059cc0d1fcfb470e24b89f0bd1b4062fb9f45e3d06ee164a"
+test_url = "https://storage.googleapis.com/kagglesdsdata/datasets/4484220/7685004/wmt14_translate_fr-en_test.csv?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=gcp-kaggle-com%40kaggle-161607.iam.gserviceaccount.com%2F20240506%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20240506T210414Z&X-Goog-Expires=259200&X-Goog-SignedHeaders=host&X-Goog-Signature=4b1597342e42735ee930176c17260607cc2536a5abafdd1396da463a3e08ccb6eb22ae42d986850badec93fa8cc2f00db2fff187cf3dc8ab03b9bcbc63b9151fac5e46e9618b9fdb3b7676af35213d8c95d8ba93b7ce37c229d4d85886594b3a3ec6eb6fd5514ef9503e752ee886606c8954dc8daadcb5ee941663cf38762071ae848299b7258600dfa63ed1f7101008f866015818a88b1bcaf81bc67cddc98adaf6771ad235174cc58d701ab7ca16c5cdcd5667edcf63d3c9dcf723dabdaf915bfea4773eb44fe87f48703d2b44ebd3b4e4b6b2c047af3a3e9ccc567c26726b1bbcb7ad104bb4759af360ffeba93c92212a3c02f5f3813dd14c15210488b86c"
+
+# Download and read the CSV files
+train_dataset = pd.read_csv(train_url)
+test_dataset = pd.read_csv(test_url)
+
+# Function to generate few-shot prompt
+def generate_few_shot_prompt(train_examples, test_sentence):
+    prompt = ""
+    for index, row in train_examples.iterrows():
+        prompt += f"English: {row['en']}\nFrench: {row['fr']}\n\n"
+    prompt += f"English: {test_sentence}\nFrench:"
+    return prompt
+
+# Function to perform few-shot translation and calculate BLEU score
+def few_shot_translation_and_bleu(num_shots):
+    translations = []
+    for index, row in test_dataset.iterrows():
+        # Select few-shot examples
+        few_shot_examples = train_dataset.sample(n=num_shots, random_state=42)
+        prompt = generate_few_shot_prompt(few_shot_examples, row['en'])
+
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": prompt},
+            ],
+            max_tokens=150,
+            temperature=0.1,
+            top_p=1,
+            n=1,
+        )
+        translation = response.choices[0].message["content"].strip()
+        translations.append(translation)
+
+        # Save the translated text to a file
+        with open(f"translations_{num_shots}_shots.txt", "a") as file:
+            file.write(f"Original English: {row['en']}\n")
+            file.write(f"Translated French: {translation}\n\n")
+
+    # Calculate BLEU score
+    bleu = BLEU()
+    references = [row['fr'] for index, row in test_dataset.iterrows()]
+    score = bleu.corpus_score(translations, [references])
+    print(f"BLEU score for {num_shots} shots: {score.score}")
+
+    # Writing BLEU score to a file
+    with open(f"bleu_score_{num_shots}_shots.txt", "w") as file:
+        file.write(f"BLEU score for {num_shots} shots: {score.score}")
+
+# Perform few-shot translation and BLEU score calculation for different shot numbers
+for num_shots in [5,50]:
+    few_shot_translation_and_bleu(num_shots)
